@@ -1,0 +1,2 @@
+Python requiremnets: 
+pip install oqs cryptography psutil requests 
