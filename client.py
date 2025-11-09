@@ -1,5 +1,7 @@
 '''
     client side code
+
+    write  basic expalnation for the workflow here later
 '''
 
 #imports: 
@@ -80,7 +82,7 @@ for i in range(ITERATION):
         with oqs.KeyEncapsulation(ALG) as kem_client:
             client_pk = kem_client.generate_keypair()
 
-        # record start time for encapsulation
+        # record time for encapsulation
         t_enc_start = time.perf_counter()
 
         with oqs.KeyEncapsulation(ALG) as kem_enc:
@@ -88,7 +90,6 @@ for i in range(ITERATION):
 
         #end time for encapsualtion
         t_enc_end = time.perf_counter()
-
 
         #this part makes no sense to me i ripped this off github and then a gpt hallucination
         #create the simulated message for symmetric encryption: 
@@ -106,9 +107,49 @@ for i in range(ITERATION):
             shared_secret_client = kem_decap.decap_secret(kem_ciphertext, private_key)
 
         t_decrypt_end = time.perf_counter()
-        
 
+        #metrics for csv: 
+        encap_time = t_enc_end - t_enc_start
+        decap_time = t_decrypt_end - t_decrypt_start
+        cpu_percent = proc.cpu_percent(interval=0.01)
+        mem_usage = proc.memory_info().rss
+        
+        with open(CSV_FILE, "a", newline="") as f:
+            writer = csv.writer(f)
+            writer.writerow([i+1, encap_time, decap_time, cpu_percent, mem_usage])
+
+        print(f"Run {i+1:03d}: Enc {encap_time:.6f}s | Dec {decap_time:.6f}s | CPU {cpu_percent:.2f}% | Mem {mem_usage/1024:.0f} KB")
+
+
+        # Optional: send metrics to server for logging 
+        # not doing this because i am not paying for aws dawg
+        # requests.post(f"{SERVER}/metrics", json={
+        #     "iteration": i + 1,
+        #     "encap_time_s": encap_time,
+        #     "decap_time_s": decap_time,
+        #     "cpu_percent": cpu_percent,
+        #     "mem_rss_bytes": mem_usage
+        # }, verify=False)
 
     except Exception as e: 
         print(f"u messed up, heres your mess up: \n{e}")
         continue
+#print benchmark to terminal
+print(f'Benchmark ran {ITERATION} time(s), data has been saved to {CSV_FILE}')
+
+enc_times, dec_times, cpu_vals, mem_vals = [], [], [], []
+
+with open(CSV_FILE, newline="") as f:
+    reader = csv.DictReader(f)
+    for row in reader:
+        enc_times.append(float(row["EncapTime_s"]))
+        dec_times.append(float(row["DecapTime_s"]))
+        cpu_vals.append(float(row["CPU%"]))
+        mem_vals.append(int(row["MemBytes"]))
+
+print("\n=== Benchmark Summary ===")
+print(f"Average Encap Time | {statistics.mean(enc_times):.6f}s")
+print(f"Average Decap Time | {statistics.mean(dec_times):.6f}s")
+print(f"Average CPU Usage  | {statistics.mean(cpu_vals):.2f}%")
+print(f"Average Memory RSS | {statistics.mean(mem_vals)/1024:.0f} KB")
+print("==========================")
