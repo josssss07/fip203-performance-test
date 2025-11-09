@@ -9,8 +9,8 @@
  '''
 
 
-from flask import Flask, request, jsonify   # type: ignore
-from pqcrypto.kem.kyber512 import generate_keypair, decapsulate, encapsulate # type: ignore
+from flask import Flask, request, jsonify   
+from pqcrypto.kem.ml_kem_512 import generate_keypair, decapsulate, encapsulate 
 import psutil
 import time
 
