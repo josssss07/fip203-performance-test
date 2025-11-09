@@ -17,3 +17,17 @@ pip install .
 '
 once this is done, open the install_oqs_to_env.py file and run that and that will give us access to oqs. 
 thank you open_quantum_safe for making this not so hard but just annoying
+
+
+client.py workflow: 
+from main() because the above part is just like constants and helper funcs that are defined
+1- start with checking if KYBER exists in oqs.
+2- generate a keystore file and keystore key for the well, keys
+3- if not exists, generate the key pair and the files for the keypair
+4- load the algo in and then open the csv file to store the benchmark data 
+5- begin the encryption process for n=ITERATION times
+6- write the data to the csv
+7- get the mean values for everything because thats what i decided for now 
+
+
+
