@@ -1,2 +1,6 @@
-Python requiremnets: 
-pip install oqs cryptography psutil requests 
+General overview: 
+
+line 20: for this project to make it more realistic of how encryption and decryption would be handled we decided that it would be accurate to use aws rather than use 
+ports. having our program act as an API we can see what realistic traffic looks like rather than sending data over sockets 
+sockets were considered but with the assumption that this is more realistic, a basic flask application over aws is what we decided to do
+
