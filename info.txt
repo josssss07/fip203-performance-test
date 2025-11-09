@@ -4,3 +4,16 @@ line 20: for this project to make it more realistic of how encryption and decryp
 ports. having our program act as an API we can see what realistic traffic looks like rather than sending data over sockets 
 sockets were considered but with the assumption that this is more realistic, a basic flask application over aws is what we decided to do
 
+line 28: 
+Encodes binary data into a Base64-encoded string. It first encodes the binary data using Base64, 
+then decodes the result into an ASCII string so it can be easily printed or transmitted
+
+oqs library is annoying, refer github for help: https://github.com/open-quantum-safe/liboqs-python
+commands to install: 
+'
+git clone --depth=1 https://github.com/open-quantum-safe/liboqs-python
+cd liboqs-python
+pip install .
+'
+once this is done, open the install_oqs_to_env.py file and run that and that will give us access to oqs. 
+thank you open_quantum_safe for making this not so hard but just annoying
