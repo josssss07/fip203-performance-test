@@ -1,5 +1,0 @@
-todo: 
-- create the local app that will do the public key work
-- create the aws app that will handle the private key stuff
-
-(consider if we can do it vice versa or maybe some other implementation method? )
