@@ -10,6 +10,7 @@ import requests, statistics
 from  cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
+from cryptography.hazmat.primitives.asymmetric import rsa
 import oqs 
 from cryptography.fernet import Fernet
 import warnings
@@ -29,6 +30,15 @@ def b64_d(x):
 
 def b64_e(x):
     return base64.b64encode(x).decode("ascii") #info.txt for explaination 
+
+def generate_rsa_keypair(key_length=2048):
+    """
+    Generates a private key of the specified size and returns it
+    along with the public key (defaults to 65537)
+    """
+    DEFAULT_RSA_PUBLIC_EXPONENT = 65537
+    private_key = rsa.generate_private_key(DEFAULT_RSA_PUBLIC_EXPONENT, key_length)
+    return (private_key, private_key.public_key)
 
 def main():
     #select mlkem/kyber - fips203 algorithm: 
