@@ -8,7 +8,7 @@ Flask==3.1.2
 idna==3.11
 itsdangerous==2.2.0
 Jinja2==3.1.6
-liboqs-python @ file:///home/josh/RIT/CSEC604_cryptography_and_authentication/fips203-performance-test/liboqs-python
+# liboqs-python 
 MarkupSafe==3.0.3
 numpy==2.3.4
 oqs==0.10.2
