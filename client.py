@@ -40,13 +40,7 @@ def generate_rsa_keypair(key_length=2048):
     private_key = rsa.generate_private_key(DEFAULT_RSA_PUBLIC_EXPONENT, key_length)
     return (private_key, private_key.public_key)
 
-def main():
-    #select mlkem/kyber - fips203 algorithm: 
-    ALG = next((algo for algo in oqs.get_enabled_kem_mechanisms() if "KYBER" in algo.upper() or "ML-KEM" in algo.upper()), None)
-    if not ALG:
-        raise SystemExit("No ML-KEM/Kyber implementation found in liboqs")
-
-    #make a local keystore for the keys 
+def create_local_keystore(ALG):
     KEYSTORE_FILE = "client_keystore.bin"
     KEYSTORE_KEY = "keystore_key.bin"
 
@@ -71,7 +65,18 @@ def main():
         private_key = Fernet(local_key).decrypt(enc)
 
     print(f"ML-KEM: {ALG} loaded")
+    return private_key
 
+def main():
+    #select mlkem/kyber - fips203 algorithm: 
+    # NOTE: How likely is it for this library to not have an implementation of FIPS-203?    
+        # is it possible for it to have multiple and for this line to select the wrong one since it matches both "KYBER" and "ML-KEM"
+    ALG = next((algo for algo in oqs.get_enabled_kem_mechanisms() if "KYBER" in algo.upper() or "ML-KEM" in algo.upper()), None)
+    if not ALG:
+        raise SystemExit("No ML-KEM/Kyber implementation found in liboqs")
+
+    # Nit: I think extracting this into a helper function makes it easier to edit main() in the future
+    private_key = create_local_keystore(ALG)
 
     #csv for data storage to check information: 
     with open(CSV_FILE, "w", newline="") as f:
@@ -87,6 +92,11 @@ def main():
             proc = psutil.Process()
 
             # fetch server public key
+            # NOTE not necessarily a needed change, but we may need more research on existing protocols for PQC
+            # & may need to consider how we should benchmark vs RSA (e.g. RSA using digital certificates, is there 
+            # a PQC equivalent? Would affect packet sizes)
+            # NOTE do we still want to track packet sizes? Would probably be a pretty simple addition, just store the size of 
+            # the server's response and compute the average 
             srv_pub = requests.get(f"{SERVER}/public_key", verify=False).json()
             server_pk = b64_d(srv_pub["public_key_b64"])
             # generate client keypair
