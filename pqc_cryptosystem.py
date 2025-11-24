@@ -1,13 +1,22 @@
 import oqs
-from quantcrypt.kem import MLKEM_1024
-from quantcrypt.dss import MLDSA_87
+from quantcrypt.kem import MLKEM_512, MLKEM_768, MLKEM_1024
+from quantcrypt.dss import MLDSA_44, MLDSA_65, MLDSA_87
 
 class PQCCryptosystem:
 
-    def __init__(self, key_length: int):
+    def __init__(self, key_length: str):
         self.key_length = key_length # key length should likely be something like "short, medium, long" since there are exactly 3 set lengths
-        self.key_exchange_object = MLKEM_1024()
-        self.signing_object = MLDSA_87()
+        if key_length == "short":
+            self.key_exchange_object = MLKEM_512()
+            self.signing_object = MLDSA_44()
+        elif key_length == "medium":
+            self.key_exchange_object = MLKEM_768()
+            self.signing_object = MLDSA_65()
+        elif key_length == "long":
+            self.key_exchange_object = MLKEM_1024()
+            self.signing_object = MLDSA_87()
+        else:
+            raise ValueError("Only accepted key_lengths are 'short' (MLKEM 512, MLDSA 44), 'medium' (MLKEM 768, MLDSA 65), and 'long' (MLKEM 1024, MLDSA 87)")
         self.public_encapsulation_key, self.private_decapsulation_key = self.key_exchange_object.keygen()
         self.public_signature_key, self.private_signature_key = self.signing_object.keygen()
         self.shared_secret = None

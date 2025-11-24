@@ -9,7 +9,7 @@ class TestRSACryptosystem(unittest.TestCase):
     # pip install unittest
 
     def setUp(self):
-        self.test_key_length = 512 # TODO update this & the class' key length to reflect the fact that there are exactly 3 key sizes at the present moment for PQC
+        self.test_key_length = "long" 
         self.test_pqc_alice = PQCCryptosystem(self.test_key_length)
         self.test_pqc_bob = PQCCryptosystem(self.test_key_length)
 
@@ -18,6 +18,7 @@ class TestRSACryptosystem(unittest.TestCase):
         ciphertext = self.test_pqc_bob.encapsulate_shared_secret_ciphertext(self.test_pqc_alice.get_public_encapsulation_key())
         self.test_pqc_alice.decapsulate_shared_secret_ciphertext(ciphertext)
         self.assertEqual(self.test_pqc_alice.shared_secret, self.test_pqc_bob.shared_secret)
+        self.assertNotEqual(self.test_pqc_alice.shared_secret, None) # shared secret should be initialized
 
     def test_encapsulate_wrong_key_different_shared_secret(self):
         # Check that computing a ciphertext & shared secret with the wrong public key fails to arrive at the same shared secret
