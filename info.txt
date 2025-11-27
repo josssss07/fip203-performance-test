@@ -1,3 +1,7 @@
+High level workflow overview: 
+1: 
+
+
 General overview: 
 
 line 20: for this project to make it more realistic of how encryption and decryption would be handled we decided that it would be accurate to use aws rather than use 

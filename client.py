@@ -1,159 +1,203 @@
-'''
-    client side code
+"""
+client.py
+- Fetches server info, does a mutual KEM handshake:
+  1) client encapsulates to server public key -> ciphertext_c2s, ss_c2s
+  2) client sends its KEM public key + ciphertext_c2s to server (/handshake)
+  3) server decapsulates, encapsulates back to client, signs response
+  4) client decapsulates server ciphertext -> ss_s2c
+  5) Both sides can derive final symmetric key: HKDF(ss_c2s || ss_s2c || context)
+- Records benchmark metrics (client encap time, client decap time, plus server metrics returned)
+"""
 
-    write  basic expalnation for the workflow here later
-'''
-
-#imports: 
-import base64, os, time, csv, psutil
-import requests, statistics
-from  cryptography.hazmat.primitives.kdf.hkdf import HKDF
+import argparse
+import base64
+import time
+import csv
+import os
+import requests
+import psutil
+import statistics
+import oqs
+from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.ciphers.aead import ChaCha20Poly1305
-import oqs 
-from cryptography.fernet import Fernet
-import warnings
 
+SERVER_URL = os.environ.get("SERVER_URL", "http://127.0.0.1:5000")
+DEFAULT_ITERATIONS = 100
+CLIENT_CSV = os.environ.get("CLIENT_CSV", "client_metrics.csv")
 
-#ignore self signed HTTPS warnings: 
-warnings.filterwarnings("ignore")
+def b64(x: bytes) -> str:
+    return base64.b64encode(x).decode("ascii")
 
-#configs 
-SERVER = "https://aws_goes_here_later:5000" #fips203 will run on port 5000 and rsa will run on port 5001 (read info.txt)
-ITERATION = 10 #api will be called 100 times when program is run to store data into our csv file. can be changed accordingly 
-CSV_FILE = 'benchnmark_results.csv' 
+def b64d(s: str) -> bytes:
+    return base64.b64decode(s.encode("ascii"))
 
-#helper b64 encode and decode functions: 
-def b64_d(x):
-    return base64.b64decode(x) #decodes base64 
+def derive_final_key(ss1: bytes, ss2: bytes, info=b"mutual-kem-v1"):
+    # Derive a final symmetric key from both shared secrets
+    hkdf = HKDF(algorithm=hashes.SHA256(), length=32, salt=None, info=info)
+    return hkdf.derive(ss1 + ss2)
 
-def b64_e(x):
-    return base64.b64encode(x).decode("ascii") #info.txt for explaination 
+def run_once(server_info, iteration, session: requests.Session):
+    ALG = server_info["kem_algorithm"]
+    server_kem_pub = b64d(server_info["server_kem_public_b64"])
+    server_sign_pub = b64d(server_info["server_sign_public_b64"])
+
+    proc = psutil.Process()
+
+    # Measure client key generation
+    cpu_k_gen_before = proc.cpu_percent(interval=None)
+    mem_k_gen_before = proc.memory_info().rss
+    tkg0 = time.perf_counter()
+    with oqs.KeyEncapsulation(ALG) as kem_client:
+        client_pub = kem_client.generate_keypair()
+        client_priv = kem_client.export_secret_key()
+    tkg1 = time.perf_counter()
+    keygen_time = tkg1 - tkg0
+    cpu_k_gen_after = proc.cpu_percent(interval=None)
+    mem_k_gen_after = proc.memory_info().rss
+
+    # Client encapsulates to server public key (client->server)
+    t0 = time.perf_counter()
+    with oqs.KeyEncapsulation(ALG) as kem_enc:
+        ct_c2s, ss_c2s = kem_enc.encap_secret(server_kem_pub)
+    t1 = time.perf_counter()
+    client_encap_time = t1 - t0
+
+    # Send client's public key + ciphertext to server (include iteration)
+    payload = {
+        "client_kem_public_b64": b64(client_pub),
+        "client_to_server_ciphertext_b64": b64(ct_c2s),
+        "iteration": iteration
+    }
+
+    # Record cpu/mem before sending (for total round-trip measurement)
+    cpu_before = proc.cpu_percent(interval=None)
+    mem_before = proc.memory_info().rss
+
+    resp = session.post(f"{SERVER_URL}/handshake", json=payload)
+    resp.raise_for_status()
+    server_resp = resp.json()
+
+    # Parse server response
+    ct_s2c = b64d(server_resp["server_to_client_ciphertext_b64"])
+    server_metrics = server_resp.get("metrics", {})
+    server_signature = b64d(server_resp.get("signature_b64", "")) if server_resp.get("signature_b64") else b""
+
+    # Client decapsulates server->client ciphertext (measure time and memory)
+    t2 = time.perf_counter()
+    with oqs.KeyEncapsulation(ALG) as kem_dec:
+        ss_s2c = kem_dec.decap_secret(ct_s2c, client_priv)
+    t3 = time.perf_counter()
+    client_decap_time = t3 - t2
+    cpu_after = proc.cpu_percent(interval=None)
+    mem_after = proc.memory_info().rss
+
+    # Derive final symmetric key (for usage)
+    final_key = derive_final_key(ss_c2s, ss_s2c)
+
+    # Return all metrics and derived key (for demonstration)
+    return {
+        "keygen_time_s": keygen_time,
+        "keygen_cpu_before": cpu_k_gen_before,
+        "keygen_cpu_after": cpu_k_gen_after,
+        "keygen_mem_before": mem_k_gen_before,
+        "keygen_mem_after": mem_k_gen_after,
+        "client_encap_time_s": client_encap_time,
+        "client_decap_time_s": client_decap_time,
+        "cpu_before_percent": cpu_before,
+        "cpu_after_percent": cpu_after,
+        "mem_before_bytes": mem_before,
+        "mem_after_bytes": mem_after,
+        "server_metrics": server_metrics,
+        "final_key_hex": final_key.hex()
+    }
 
 def main():
-    #select mlkem/kyber - fips203 algorithm: 
-    ALG = next((algo for algo in oqs.get_enabled_kem_mechanisms() if "KYBER" in algo.upper() or "ML-KEM" in algo.upper()), None)
-    if not ALG:
-        raise SystemExit("No ML-KEM/Kyber implementation found in liboqs")
+    parser = argparse.ArgumentParser(description="KEM performance client")
+    parser.add_argument("--server", default=SERVER_URL, help="Server base URL (e.g. http://1.2.3.4:5000)")
+    parser.add_argument("--iterations", type=int, default=DEFAULT_ITERATIONS, help="Number of iterations")
+    parser.add_argument("--out", default=CLIENT_CSV, help="CSV file to write client metrics to")
+    args = parser.parse_args()
 
-    #make a local keystore for the keys 
-    KEYSTORE_FILE = "client_keystore.bin"
-    KEYSTORE_KEY = "keystore_key.bin"
+    # Fetch server info
+    r = requests.get(f"{args.server}/public_info")
+    r.raise_for_status()
+    server_info = r.json()
 
-    if not os.path.exists(KEYSTORE_FILE):
-        print("generating new private key.....")
-        with oqs.KeyEncapsulation(ALG) as kem: 
-            kem_public_key = kem.generate_keypair()
-            private_key = kem.export_secret_key()
-
-        local_key = Fernet.generate_key()
-        with open(KEYSTORE_FILE, "wb") as f: 
-            f.write(local_key)
-        #encrypt our local key with our private key on a fernet instance
-        enc = Fernet(local_key).encrypt(private_key)
-
-        with open(KEYSTORE_KEY, 'wb') as f: 
-            f.write(enc)
-
-    else:
-        local_key = open(KEYSTORE_KEY, 'rb').read()
-        enc = open(KEYSTORE_FILE, 'rb').read()
-        private_key = Fernet(local_key).decrypt(enc)
-
-    print(f"ML-KEM: {ALG} loaded")
-
-
-    #csv for data storage to check information: 
-    with open(CSV_FILE, "w", newline="") as f:
+    # CSV header
+    write_header = not os.path.exists(args.out)
+    with open(args.out, "a", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["Iteration", "EncapTime_s", "DecapTime_s", "CPU%", "MemBytes"])
+        if write_header:
+            writer.writerow([
+                "Iteration",
+                "timestamp",
+                "keygen_time_s",
+                "keygen_cpu_before",
+                "keygen_cpu_after",
+                "keygen_mem_before",
+                "keygen_mem_after",
+                "client_encap_s",
+                "client_decap_s",
+                "cpu_before_pct",
+                "cpu_after_pct",
+                "mem_before_bytes",
+                "mem_after_bytes",
+                "server_decap_s",
+                "server_encap_s",
+                "server_sign_s",
+                "server_client_ct_bytes",
+                "server_server_ct_bytes",
+                "server_total_packet_bytes",
+                "final_key_hex"
+            ])
 
-
-    # benchmarking: 
-    print("Begining benchmark: ")
-
-    for i in range(ITERATION):
-        try: 
-            proc = psutil.Process()
-
-            # fetch server public key
-            srv_pub = requests.get(f"{SERVER}/public_key", verify=False).json()
-            server_pk = b64_d(srv_pub["public_key_b64"])
-            # generate client keypair
-            with oqs.KeyEncapsulation(ALG) as kem_client:
-                client_pk = kem_client.generate_keypair()
-
-            # record time for encapsulation
-            t_enc_start = time.perf_counter()
-
-            with oqs.KeyEncapsulation(ALG) as kem_enc:
-                kem_ciphertext, shared_secret = kem_enc.encap_secret(server_pk)
-
-            #end time for encapsualtion
-            t_enc_end = time.perf_counter()
-
-            #this part makes no sense to me i ripped this off github and then a gpt hallucination
-            #create the simulated message for symmetric encryption: 
-            hkdf = HKDF(algorithm=hashes.SHA256(), length=44, salt=None, info=b"fips203-packet-v1")
-            okm = hkdf.derive(shared_secret)
-            key, nonce = okm[:32], okm[32:44]
-            aead = ChaCha20Poly1305(key)
-            aad = b"hdr:demo"
-            ct = aead.encrypt(nonce, b"Benchmarking packet", aad)
-
-            #decryption timer 
-            t_decrypt_start = time.perf_counter()
-
-            with oqs.KeyEncapsulation(ALG) as kem_decap: 
-                shared_secret_client = kem_decap.decap_secret(kem_ciphertext, private_key)
-
-            t_decrypt_end = time.perf_counter()
-
-            #metrics for csv: 
-            encap_time = t_enc_end - t_enc_start
-            decap_time = t_decrypt_end - t_decrypt_start
-            cpu_percent = proc.cpu_percent(interval=0.01)
-            mem_usage = proc.memory_info().rss
-            
-            with open(CSV_FILE, "a", newline="") as f:
+    results = []
+    session = requests.Session()
+    for i in range(args.iterations):
+        try:
+            out = run_once(server_info, i+1, session)
+            srv = out["server_metrics"]
+            row = [
+                i+1,
+                time.time(),
+                f"{out['keygen_time_s']:.9f}",
+                f"{out['keygen_cpu_before']:.2f}",
+                f"{out['keygen_cpu_after']:.2f}",
+                out['keygen_mem_before'],
+                out['keygen_mem_after'],
+                f"{out['client_encap_time_s']:.9f}",
+                f"{out['client_decap_time_s']:.9f}",
+                f"{out['cpu_before_percent']:.2f}",
+                f"{out['cpu_after_percent']:.2f}",
+                out['mem_before_bytes'],
+                out['mem_after_bytes'],
+                f"{srv.get('decap_time_s', 0):.9f}",
+                f"{srv.get('encap_time_s', 0):.9f}",
+                f"{srv.get('sign_time_s', 0):.9f}",
+                srv.get('client_ct_bytes', ''),
+                srv.get('server_ct_bytes', ''),
+                srv.get('total_packet_bytes', ''),
+                out['final_key_hex']
+            ]
+            with open(args.out, "a", newline="") as f:
                 writer = csv.writer(f)
-                writer.writerow([i+1, encap_time, decap_time, cpu_percent, mem_usage])
+                writer.writerow(row)
 
-            print(f"Run {i+1:03d}: Enc {encap_time:.6f}s | Dec {decap_time:.6f}s | CPU {cpu_percent:.2f}% | Mem {mem_usage/1024:.0f} KB")
+            print(f"Run {i+1:03d}: keygen {out['keygen_time_s']:.6f}s | C_enc {out['client_encap_time_s']:.6f}s | C_dec {out['client_decap_time_s']:.6f}s | S_enc {srv.get('encap_time_s',0):.6f}s | S_dec {srv.get('decap_time_s',0):.6f}s")
 
+            results.append(out)
+        except Exception as e:
+            print("Error on iteration", i+1, e)
 
-            # Optional: send metrics to server for logging 
-            # not doing this because i am not paying for aws dawg
-            # requests.post(f"{SERVER}/metrics", json={
-            #     "iteration": i + 1,
-            #     "encap_time_s": encap_time,
-            #     "decap_time_s": decap_time,
-            #     "cpu_percent": cpu_percent,
-            #     "mem_rss_bytes": mem_usage
-            # }, verify=False)
-
-        except Exception as e: 
-            print(f"u messed up, heres your mess up: \n{e}")
-            continue
-    #print benchmark to terminal
-    print(f'Benchmark ran {ITERATION} time(s), data has been saved to {CSV_FILE}')
-
-    enc_times, dec_times, cpu_vals, mem_vals = [], [], [], []
-
-    with open(CSV_FILE, newline="") as f:
-        reader = csv.DictReader(f)
-        for row in reader:
-            enc_times.append(float(row["EncapTime_s"]))
-            dec_times.append(float(row["DecapTime_s"]))
-            cpu_vals.append(float(row["CPU%"]))
-            mem_vals.append(int(row["MemBytes"]))
-
-    print("\n=== Benchmark Summary ===")
-    print(f"Average Encap Time | {statistics.mean(enc_times):.6f}s")
-    print(f"Average Decap Time | {statistics.mean(dec_times):.6f}s")
-    print(f"Average CPU Usage  | {statistics.mean(cpu_vals):.2f}%")
-    print(f"Average Memory RSS | {statistics.mean(mem_vals)/1024:.0f} KB")
-    print("==========================")
+    # Brief summary:
+    encs = [r["client_encap_time_s"] for r in results]
+    decs = [r["client_decap_time_s"] for r in results]
+    if encs and decs:
+        print("\n=== Summary ===")
+        print(f"Avg client encap: {statistics.mean(encs):.9f}s")
+        print(f"Avg client decap: {statistics.mean(decs):.9f}s")
+    else:
+        print("No successful runs recorded.")
 
 if __name__ == "__main__":
     main()
