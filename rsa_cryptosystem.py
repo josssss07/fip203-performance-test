@@ -12,15 +12,13 @@ class RSACryptosystem: # keeping it simple for now w/ only RSA, maybe add diffie
         self.key_length = key_length
         self.private_key = rsa.generate_private_key(self.PUBLIC_EXPONENT, key_length)
         # initialize RSA private key object
+        self.OAEP_PADDING = padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
+        self.PSS_PADDING = padding.PSS(mgf=padding.MGF1(hashes.SHA256()), salt_length = padding.PSS.MAX_LENGTH)
 
     def encrypt_message(self, message: bytes, public_key: RSAPublicKey) -> bytes: 
         ciphertext = public_key.encrypt(
             message,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
+            self.OAEP_PADDING
         )
         return ciphertext
     
@@ -28,21 +26,14 @@ class RSACryptosystem: # keeping it simple for now w/ only RSA, maybe add diffie
         private_key = self.private_key
         plaintext = private_key.decrypt(
             ciphertext,
-            padding.OAEP(
-                mgf=padding.MGF1(algorithm=hashes.SHA256()),
-                algorithm=hashes.SHA256(),
-                label=None
-            )
+            self.OAEP_PADDING
         )
         return plaintext
 
     def sign_message(self, message: bytes) -> bytes:
         signature = self.private_key.sign(
             message,
-            padding.PSS(
-                mgf=padding.MGF1(hashes.SHA256()),
-                salt_length=padding.PSS.MAX_LENGTH
-            ),
+            self.PSS_PADDING,
             hashes.SHA256()
         )
         return signature
@@ -52,10 +43,7 @@ class RSACryptosystem: # keeping it simple for now w/ only RSA, maybe add diffie
             signatory_public_key.verify(
                 signature,
                 message,
-                padding.PSS(
-                    mgf=padding.MGF1(hashes.SHA256()),
-                    salt_length=padding.PSS.MAX_LENGTH
-                ),
+                self.PSS_PADDING,
                 hashes.SHA256()
             )
             return True # If we get here then no exception was raised from the signature not being verified
