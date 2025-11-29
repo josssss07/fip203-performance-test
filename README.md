@@ -84,10 +84,3 @@ Server CSV (columns):
 - Run the app with `gunicorn` and optionally place an Application Load Balancer (ALB) in front for TLS termination.
 - Store logs/CSV on the instance's EBS or periodically upload to S3 for centralized analysis.
 
-## Next Steps (optional)
-
-- Add AES-GCM payload encryption on the server using the derived key and measure encryption time + ciphertext size.
-- Provide an `analyze_metrics.py` that reads both CSVs and prints summary statistics and percentiles.
-- Add a `systemd` unit file and `gunicorn` configuration to support repeatable AWS deployments.
-
-
