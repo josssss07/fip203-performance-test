@@ -70,13 +70,6 @@ Server CSV (columns):
 - `mem_before_bytes`, `mem_after_bytes`: RSS memory around event
 - `client_ct_bytes`, `server_ct_bytes`, `total_packet_bytes`: sizes in bytes
 
-## Notes & Recommendations
-
-- Run client and server on separate machines for accurate network-included measurements.
-- For consistent CPU timing, fix CPU frequency scaling or run with a stable governor.
-- Use `pandas` or R to aggregate CSV results and compute percentiles (p50/p95/p99).
-- The server signs `client_ct || server_ct` with Ed25519; the client currently logs the signature but does not verify it by default — add verification if you require authentication checks.
-
 ## AWS Deployment Guidance
 
 - Launch an EC2 instance, install Python and project dependencies in a venv.
