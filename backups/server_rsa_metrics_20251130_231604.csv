@@ -1,0 +1,3 @@
+Iteration,timestamp,event,time_s,cpu_before,cpu_after,mem_before,mem_after,ciphertext_bytes
+0,1764562454.767745,server_rsa_keygen,0.010070646,0.00,98.40,41988096,42086400,
+0,1764562454.8290265,server_rsa_keygen,0.026473512,0.00,112.90,42049536,42139648,
